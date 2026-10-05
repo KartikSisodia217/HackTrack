@@ -1,0 +1,34 @@
+rules_version = '2';
+
+// HackTrack Firestore security rules.
+// Each signed-in user can only read/write documents under users/{their own uid}/hackathons.
+// Everything else is denied by default.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isOwner(userId) {
+      return request.auth != null && request.auth.uid == userId;
+    }
+
+    function isShortString(value, maxSize) {
+      return value is string && value.size() <= maxSize;
+    }
+
+    function isValidHackathon(data) {
+      return data.keys().hasOnly(['name', 'stage', 'deadline', 'offlineRound', 'homepage', 'createdAt', 'updatedAt'])
+        && data.keys().hasAll(['name', 'stage', 'deadline'])
+        && isShortString(data.name, 1000)
+        && isShortString(data.stage, 1000)
+        && isShortString(data.deadline, 64)
+        && (!('offlineRound' in data) || isShortString(data.offlineRound, 64))
+        && (!('homepage' in data) || isShortString(data.homepage, 4096))
+        && (!('createdAt' in data) || data.createdAt is number)
+        && (!('updatedAt' in data) || data.updatedAt is timestamp);
+    }
+
+    match /users/{userId}/hackathons/{hackathonId} {
+      allow read, delete: if isOwner(userId);
+      allow create, update: if isOwner(userId) && isValidHackathon(request.resource.data);
+    }
+  }
+}
